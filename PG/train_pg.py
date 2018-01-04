@@ -172,14 +172,14 @@ def train_PG(exp_name='',
         # YOUR_CODE_HERE
         sy_logits_na = build_mlp(sy_ob_no, ac_dim, "sy_logits_na")
         sy_sampled_ac = tf.reshape(tf.multinomial(sy_logits_na, 1), [-1]) # Hint: Use the tf.multinomial op
-        sy_logprob_n = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=sy_ac_na, logits=sy_logits_na)
+        sy_logprob_n = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=sy_ac_na, logits=sy_logits_na) # considers labels in (0, num_Actions) which are converted to one hot encodings later
 
     else:
         # YOUR_CODE_HERE
-        sy_mean = TODO
-        sy_logstd = TODO # logstd should just be a trainable variable, not a network output.
-        sy_sampled_ac = TODO
-        sy_logprob_n = TODO  # Hint: Use the log probability under a multivariate gaussian.
+        sy_mean =build_mlp(sy_ob_no, ac_dim, "sy_logits_na")
+        sy_logstd = tf.exp(tf.get_variable(name="logstd", shape=[ac_dim], validate_shape=False)) # logstd should just be a trainable variable, not a network output.
+        sy_sampled_ac = tf.contrib.distributions.MultivariateNormalDiag(sy_mean, sy_logstd).sample()
+        sy_logprob_n = tf.contrib.distributions.MultivariateNormalDiag(sy_mean, sy_logstd).log_prob(sy_ac_na) #-1/2 * tf.square(sy_mean - sy_ac_na) / sy_logstd  # Hint: Use the log probability under a multivariate gaussian.
 
 
 
@@ -188,7 +188,7 @@ def train_PG(exp_name='',
     # Loss Function and Training Operation
     #========================================================================================#
 
-    loss = tf.reduce_mean(sy_logprob_n * sy_adv_n) #Loss function that we'll differentiate to get the policy gradient.
+    loss = tf.reduce_mean(tf.multiply(sy_logprob_n, sy_adv_n)) #Loss function that we'll differentiate to get the policy gradient.
     update_op = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
 
@@ -207,7 +207,9 @@ def train_PG(exp_name='',
         # Define placeholders for targets, a loss function and an update op for fitting a
         # neural network baseline. These will be used to fit the neural network baseline.
         # YOUR_CODE_HERE
-        baseline_update_op = TODO
+        sy_target_n = tf.placeholder(shape=[None], dtype = dtype=tf.float32)
+        loss_baseline = tf.reduce_mean(sy_target_n - baseline_prediction)
+        baseline_update_op = tf.train.AdamOptimizer(learning_rate).minimize(loss_baseline)
 
 
     #========================================================================================#
@@ -329,7 +331,11 @@ def train_PG(exp_name='',
                 discounted_sum.append(np.flip(np.cumsum(np.flip(path['reward'] * discount, 0)),0))
 
         else:
-            pass
+            discounted_sum = []
+            for path in paths:
+                shape_rew = path['reward'].shape[0]
+                discount = np.power(gamma * np.ones(shape_rew), np.arange(shape_rew))
+                discounted_sum.append(np.sum(discount * path['reward']) * np.ones(shape_rew))
 
 
         q_n = np.concatenate(discounted_sum)
@@ -347,8 +353,8 @@ def train_PG(exp_name='',
             # Hint #bl1: rescale the output from the nn_baseline to match the statistics
             # (mean and std) of the current or previous batch of Q-values. (Goes with Hint
             # #bl2 below.)
+            b_n = sess.run(baseline_prediction, feed_dict={sy_ob_no : ob_no}
 
-            b_n = TODO
             adv_n = q_n - b_n
         else:
             adv_n = q_n.copy()
@@ -381,7 +387,7 @@ def train_PG(exp_name='',
             # targets to have mean zero and std=1. (Goes with Hint #bl1 above.)
 
             # YOUR_CODE_HERE
-            pass
+            sess.run(baseline_update_op, feed_dict={sy_ob_no : ob_no, sy_target_n : q_n})
 
         #====================================================================================#
         #                           ----------SECTION 4----------
