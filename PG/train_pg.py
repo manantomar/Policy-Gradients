@@ -35,8 +35,9 @@ def build_mlp(
 
     with tf.variable_scope(scope):
         # YOUR_CODE_HERE
-        x = tf.layers.dense(input_placeholder, size, activation)
-        x = tf.layers.dense(x, size, activation)
+        x = input_placeholder
+        for i in range(n_layers):
+            x = tf.layers.dense(x, size, activation)
         x = tf.layers.dense(x, output_size, output_activation)
     return x
 
@@ -207,7 +208,7 @@ def train_PG(exp_name='',
         # Define placeholders for targets, a loss function and an update op for fitting a
         # neural network baseline. These will be used to fit the neural network baseline.
         # YOUR_CODE_HERE
-        sy_target_n = tf.placeholder(shape=[None], dtype = dtype=tf.float32)
+        sy_target_n = tf.placeholder(shape=[None], dtype=tf.float32)
         loss_baseline = tf.reduce_mean(sy_target_n - baseline_prediction)
         baseline_update_op = tf.train.AdamOptimizer(learning_rate).minimize(loss_baseline)
 
@@ -326,16 +327,18 @@ def train_PG(exp_name='',
         if reward_to_go:
             discounted_sum = []
             for path in paths:
-                shape_rew = path['reward'].shape[0]
-                discount = np.power(gamma * np.ones(shape_rew), np.arange(shape_rew))
-                discounted_sum.append(np.flip(np.cumsum(np.flip(path['reward'] * discount, 0)),0))
+                len_rew = path['reward'].shape[0]
+                for i in range(len_rew):
+                    discount = np.power(gamma * np.ones(len_rew - i), np.arange(len_rew - i))
+                    discounted_sum.append(np.sum(path['reward'][i:] * discount))
+            discounted_sum = [discounted_sum]
 
         else:
             discounted_sum = []
             for path in paths:
-                shape_rew = path['reward'].shape[0]
-                discount = np.power(gamma * np.ones(shape_rew), np.arange(shape_rew))
-                discounted_sum.append(np.sum(discount * path['reward']) * np.ones(shape_rew))
+                len_rew = path['reward'].shape[0]
+                discount = np.power(gamma * np.ones(len_rew), np.arange(len_rew))
+                discounted_sum.append(np.sum(discount * path['reward']) * np.ones(len_rew))
 
 
         q_n = np.concatenate(discounted_sum)
@@ -353,7 +356,7 @@ def train_PG(exp_name='',
             # Hint #bl1: rescale the output from the nn_baseline to match the statistics
             # (mean and std) of the current or previous batch of Q-values. (Goes with Hint
             # #bl2 below.)
-            b_n = sess.run(baseline_prediction, feed_dict={sy_ob_no : ob_no}
+            b_n = sess.run(baseline_prediction, feed_dict={sy_ob_no : ob_no})
 
             adv_n = q_n - b_n
         else:
@@ -368,7 +371,7 @@ def train_PG(exp_name='',
             # On the next line, implement a trick which is known empirically to reduce variance
             # in policy gradient methods: normalize adv_n to have mean zero and std=1.
             # YOUR_CODE_HERE
-            pass
+            adv_n = (adv_n - np.mean(adv_n)) / np.std(adv_n)
 
 
         #====================================================================================#
